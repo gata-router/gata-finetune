@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gata.works/training-data.schema.json",
+  "title": "Training Data",
+  "description": "The structure of the training data object",
+  "type": "object",
+  "properties": {
+    "label": {
+      "description": "The destination of the ticket",
+      "type": "integer",
+      "minimum": 0
+    },
+    "text": {
+      "description": "Processed data from a single ticket. Must be lowercase and contain only letters, numbers, spaces, and punctuation.",
+      "type": "string",
+      "pattern": "^[a-z0-9\\s\\.\\?!]+$"
+    }
+  },
+  "required": [ "label", "text" ]
+}

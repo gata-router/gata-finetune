@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '202*'
+  schedule:
+    - cron: '22 2 * * 6'
+
+env:
+  IMAGE_NAME: "finetune"
+  GHCR_IMAGE: "ghcr.io/${{ github.repository_owner }}/finetune"
+
+jobs:
+  docker:
+
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Free Up Space
+        id: free-up-space
+        run: |
+          df -h
+
+          # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
+          # Removeing $AGENT_TOOLSDIRECTORY breaks trivy scan
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+
+          # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
+          sudo rm -rf \
+            /opt/az \
+            /opt/microsoft/powershell \
+            /usr/local/aws-sam-cil \
+            /usr/local/bin/aliyun \
+            /usr/local/bin/azcopy \
+            /usr/local/bin/bicep \
+            /usr/local/bin/cmake-gui \
+            /usr/local/bin/cpack \
+            /usr/local/bin/helm \
+            /usr/local/bin/hub \
+            /usr/local/bin/kubectl \
+            /usr/local/bin/minikube \
+            /usr/local/bin/node \
+            /usr/local/bin/packer \
+            /usr/local/bin/pulumi* \
+            /usr/local/bin/sam \
+            /usr/local/bin/stack \
+            /usr/local/bin/terraform \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/heroku \
+            /usr/local/lib/node_modules \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell || :
+          sudo apt purge -y \
+            firefox \
+            google-chrome-stable \
+            microsoft-edge-stable
+
+          # Package cleanup
+          sudo apt autoremove --purge -y
+          sudo apt-get clean
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5.10.0
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ secrets.AWS_ECR_IMAGE}}
+          flavor: |
+            latest=false
+            prefix=
+            suffix=
+          tags: |
+            type=schedule,pattern={{date 'YYYYMMDDhh'}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=false # This breaks ECR
+
+      - name: Log in to GHCR
+        id: ghcr-login
+        uses: docker/login-action@v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log into AWS
+        id: aws-login
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: GitHubActions
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: push-ghcr
+        uses: docker/build-push-action@v6.18.0
+        with:
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Update SSM Parameter
+        id: ssm
+        run: |
+          aws ssm put-parameter --name "${{ vars.AWS_SSM_PARAMETER }}" --value :$(echo "${{ steps.meta.outputs.tags }}" | cut -d: -f2 | sort -u | tail -n1) --type String --overwrite

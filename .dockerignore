@@ -1,0 +1,12 @@
+**/*.egg-info
+**/*.pyc
+**/*.pyd
+**/*.pyo
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+**/__pycache__
+**/coverage
+**/coverage.*
+**/test_*
+**/tests

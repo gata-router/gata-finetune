@@ -1,0 +1,166 @@
+name: CI Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize]
+  push:
+    branches:
+      - '!main'
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Free Up Space
+        id: free-up-space
+        run: |
+          df -h
+
+          # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
+          # Removeing $AGENT_TOOLSDIRECTORY breaks trivy scan
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+
+          # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
+          sudo rm -rf \
+            /opt/az \
+            /opt/microsoft/powershell \
+            /usr/local/aws-sam-cil \
+            /usr/local/bin/aliyun \
+            /usr/local/bin/azcopy \
+            /usr/local/bin/bicep \
+            /usr/local/bin/cmake-gui \
+            /usr/local/bin/cpack \
+            /usr/local/bin/helm \
+            /usr/local/bin/hub \
+            /usr/local/bin/kubectl \
+            /usr/local/bin/minikube \
+            /usr/local/bin/node \
+            /usr/local/bin/packer \
+            /usr/local/bin/pulumi* \
+            /usr/local/bin/sam \
+            /usr/local/bin/stack \
+            /usr/local/bin/terraform \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/heroku \
+            /usr/local/lib/node_modules \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell || :
+          sudo apt purge -y \
+            firefox \
+            google-chrome-stable \
+            microsoft-edge-stable
+
+          # Package cleanup
+          sudo apt autoremove --purge -y
+          sudo apt-get clean
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        id: uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: true
+
+      - name: Install dependencies
+        id: dependencies
+        run: |
+          uv sync --frozen
+      
+      - name: Formatting
+        id: formatting
+        run: ruff format --check
+      
+      - name: Lint
+        id: lint
+        run: ruff check
+      # There are no tests as is this is a sequential script
+
+  docker:
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Free Up Space
+        id: free-up-space
+        run: |
+          df -h
+
+          # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
+          # Removeing $AGENT_TOOLSDIRECTORY breaks trivy scan
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+
+          # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
+          sudo rm -rf \
+            /opt/az \
+            /opt/microsoft/powershell \
+            /usr/local/aws-sam-cil \
+            /usr/local/bin/aliyun \
+            /usr/local/bin/azcopy \
+            /usr/local/bin/bicep \
+            /usr/local/bin/cmake-gui \
+            /usr/local/bin/cpack \
+            /usr/local/bin/helm \
+            /usr/local/bin/hub \
+            /usr/local/bin/kubectl \
+            /usr/local/bin/minikube \
+            /usr/local/bin/node \
+            /usr/local/bin/packer \
+            /usr/local/bin/pulumi* \
+            /usr/local/bin/sam \
+            /usr/local/bin/stack \
+            /usr/local/bin/terraform \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/heroku \
+            /usr/local/lib/node_modules \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell || :
+          sudo apt purge -y \
+            firefox \
+            google-chrome-stable \
+            microsoft-edge-stable
+
+          # Package cleanup
+          sudo apt autoremove --purge -y
+          sudo apt-get clean
+
+      - name: Build Image
+        id: build
+        run: docker build -t ci-build .
+
+      - name: Docker Cleanup
+        id: docker-cleanup
+        run: |
+          docker system prune -f
+          df -h
+
+      - name: Scan with Trivy
+        id: trivy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ci-build
+          version: 'v0.68.2'
+          trivy-config: trivy.yaml
