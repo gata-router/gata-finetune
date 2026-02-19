@@ -7,7 +7,7 @@ description = "Train HF BERT model using Zendesk ticket data"
 
 dependencies = [
   "datasets==4.5.0",
-  "pandas==3.0.0",
+  "pandas==3.0.1",
   "scikit-learn==1.8.0",
   "torch==2.10.0",
   "transformers[torch]==5.1.0",
