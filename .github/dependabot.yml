@@ -6,7 +6,12 @@ updates:
       interval: daily
       time: "04:32"
       timezone: "Australia/Melbourne"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    groups:
+      qa:
+        patterns:
+          - "ruff*"
+          - "ty*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
