@@ -21,8 +21,8 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-  "ruff==0.15.4",
-  "ty==0.0.19",
+  "ruff==0.15.7",
+  "ty==0.0.24",
 ]
 
 [tool.ruff.lint]
