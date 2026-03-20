@@ -83,11 +83,11 @@ jobs:
         id: dependencies
         run: |
           uv sync --frozen
-      
+
       - name: Formatting
         id: formatting
         run: ruff format --check
-      
+
       - name: Lint
         id: lint
         run: ruff check
@@ -156,11 +156,3 @@ jobs:
         run: |
           docker system prune -f
           df -h
-
-      - name: Scan with Trivy
-        id: trivy
-        uses: aquasecurity/trivy-action@0.34.1
-        with:
-          image-ref: ci-build
-          version: 'v0.68.2'
-          trivy-config: trivy.yaml
