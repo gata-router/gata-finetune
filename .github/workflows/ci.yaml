@@ -91,7 +91,6 @@ jobs:
       - name: Lint
         id: lint
         run: ruff check
-      # There are no tests as is this is a sequential script
 
   docker:
     runs-on: ubuntu-24.04
@@ -150,6 +149,13 @@ jobs:
       - name: Build Image
         id: build
         run: docker build -t ci-build .
+
+      - name: End-to-end smoke test
+        id: test
+        # Run inside the built image: the real bert-base-uncased is already baked
+        # in, and HF_HUB_OFFLINE keeps it off the network so we never add a second
+        # (rate-limited) Hub download.
+        run: docker run --rm -e HF_HUB_OFFLINE=1 ci-build /app/test.py
 
       - name: Docker Cleanup
         id: docker-cleanup
