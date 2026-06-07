@@ -9,27 +9,36 @@ on:
     branches:
       - '!main'
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+
 env:
   PYTHON_VERSION: "3.14"
 
 jobs:
   test:
+    name: "Test Code"
+
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - name: Free Up Space
         id: free-up-space
         run: |
           df -h
 
-          # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
-          # Removeing $AGENT_TOOLSDIRECTORY breaks trivy scan
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
+          sudo rm -rf $AGENT_TOOLSDIRECTORY
 
           # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
           sudo rm -rf \
@@ -68,13 +77,13 @@ jobs:
 
       - name: Set up Python
         id: setup-python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up uv
         id: uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
@@ -91,26 +100,30 @@ jobs:
       - name: Lint
         id: lint
         run: ruff check
-      # There are no tests as is this is a sequential script
 
   docker:
+    name: "Test Docker Build"
+
     runs-on: ubuntu-24.04
+
     needs: test
+
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - name: Free Up Space
         id: free-up-space
         run: |
           df -h
 
-          # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
-          # Removeing $AGENT_TOOLSDIRECTORY breaks trivy scan
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
+          sudo rm -rf $AGENT_TOOLSDIRECTORY
 
           # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
           sudo rm -rf \
@@ -150,6 +163,13 @@ jobs:
       - name: Build Image
         id: build
         run: docker build -t ci-build .
+
+      - name: End-to-end smoke test
+        id: test
+        # Run inside the built image: the real bert-base-uncased is already baked
+        # in, and HF_HUB_OFFLINE keeps it off the network so we never add a second
+        # (rate-limited) Hub download.
+        run: docker run --rm -e HF_HUB_OFFLINE=1 ci-build /app/test.py
 
       - name: Docker Cleanup
         id: docker-cleanup

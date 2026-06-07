@@ -6,11 +6,11 @@ authors = [
 description = "Train HF BERT model using Zendesk ticket data"
 
 dependencies = [
-  "datasets==4.8.4",
-  "pandas==3.0.1",
-  "scikit-learn==1.8.0",
-  "torch==2.10.0",
-  "transformers[torch]==5.3.0",
+  "datasets==5.0.0",
+  "pandas==3.0.3",
+  "scikit-learn==1.9.0",
+  "torch==2.12.0",
+  "transformers[torch]==5.10.2",
 ]
 
 requires-python = "~=3.14.0"
@@ -21,8 +21,8 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-  "ruff==0.15.7",
-  "ty==0.0.24",
+  "ruff==0.15.16",
+  "ty==0.0.44",
 ]
 
 [tool.ruff.lint]
@@ -35,4 +35,4 @@ fixable = ["B", "D", "E", "F", "G", "I", "N", "S", "W", "ANN" ,"BLE", "C4", "C90
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S108"]
+"test.py" = ["S101", "S108", "S603"]

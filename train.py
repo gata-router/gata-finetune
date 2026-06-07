@@ -380,8 +380,10 @@ def main() -> None:
     )
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
-        id2label=id2label,
-        label2id=label2id,
+        # transformers/huggingface_hub strictly validate these: id2label must be
+        # dict[int, str] and label2id dict[str, int], so stringify the label values.
+        id2label={i: str(label) for i, label in id2label.items()},
+        label2id={str(label): i for label, i in label2id.items()},
         local_files_only=not model_args.download_model,
     ).to(torch.device(device))
 
@@ -417,7 +419,7 @@ def main() -> None:
         trainer.train()
 
     trainer.save_model(sagemaker_args.model_dir)
-    tokenizer.save_pretrained(sagemaker_args.model_dir, legacy_format=True)
+    tokenizer.save_pretrained(sagemaker_args.model_dir)
 
     # Add model metadata and versioning
     now = datetime.datetime.now(tz=datetime.UTC)
@@ -438,22 +440,31 @@ def main() -> None:
         json.dump(model_metadata, f, indent=2)
 
     tarball_name = os.path.join(sagemaker_args.model_dir, "model.tar.gz")
+
+    # Bundle every artifact the trainer and tokenizer wrote, rather than a fixed
+    # list: the exact set varies by transformers version (e.g. fast tokenizers no
+    # longer emit vocab.txt or special_tokens_map.json, keeping everything in
+    # tokenizer.json). Exclude the tarball itself in case of a re-run.
+    model_files = sorted(
+        filename
+        for filename in os.listdir(sagemaker_args.model_dir)
+        if filename != os.path.basename(tarball_name)
+        and os.path.isfile(os.path.join(sagemaker_args.model_dir, filename))
+    )
+
+    required = {
+        "config.json",
+        "model.safetensors",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "metadata.json",
+    }
+    if missing := required.difference(model_files):
+        print(f"Warning: expected model files missing from tarball: {sorted(missing)}")
+
     with tarfile.open(tarball_name, "w:gz") as tar:
-        for filename in [
-            "config.json",
-            "model.safetensors",
-            "special_tokens_map.json",
-            "tokenizer_config.json",
-            "tokenizer.json",
-            "training_args.bin",
-            "vocab.txt",
-            "metadata.json",
-        ]:
-            filepath = os.path.join(sagemaker_args.model_dir, filename)
-            if os.path.exists(filepath):
-                tar.add(filepath, arcname=filename)
-            else:
-                print(f"Warning: File {filename} not found, skipping from tarball")
+        for filename in model_files:
+            tar.add(os.path.join(sagemaker_args.model_dir, filename), arcname=filename)
 
     print(f"Model tarball written to {tarball_name}")
 
