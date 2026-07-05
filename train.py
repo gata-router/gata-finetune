@@ -39,6 +39,8 @@ datasets.disable_progress_bar()
 transformers.utils.logging.set_verbosity_warning()
 transformers.utils.logging.disable_progress_bar()
 
+HYPERPARAMETERS_PATH = "/opt/ml/input/config/hyperparameters.json"
+
 
 @dataclass
 class SageMakerEnvironmentArguments:
@@ -108,6 +110,39 @@ class CustomTrainingArguments(TrainingArguments):
     )  # Accumulate gradients to simulate larger batch
 
 
+def clean_hyperparameters(hyperparameters: dict) -> dict:
+    """
+    Clean hyperparameters loaded from SageMaker.
+
+    SageMaker quotes every value in hyperparameters.json. Strip the quotes and
+    convert each value to its natural type.
+
+    Args:
+    ----
+        hyperparameters: The raw hyperparameters.
+
+    Returns:
+    -------
+        The cleaned hyperparameters.
+
+    """
+    cleaned_hp = {}
+    for k, v in hyperparameters.items():
+        val = v
+        # Remove any surrounding quotes
+        if isinstance(val, str):
+            val = val.strip("\"'")
+            # Convert to appropriate type if needed
+            if val.lower() == "true":
+                val = True
+            elif val.lower() == "false":
+                val = False
+            elif val.replace(".", "", 1).isdigit():
+                val = float(val) if "." in v else int(val)
+        cleaned_hp[k] = val
+    return cleaned_hp
+
+
 def compute_metrics(pred: EvalPrediction) -> dict:
     """
     Compute metrics for prediction.
@@ -124,7 +159,7 @@ def compute_metrics(pred: EvalPrediction) -> dict:
 
     """
     labels = pred.label_ids
-    preds = pred.predictions.argmax(-1)  # ty: ignore[possibly-missing-attribute]
+    preds = pred.predictions.argmax(-1)  # ty: ignore[unresolved-attribute] predictions is always an ndarray with argmax
 
     accuracy = accuracy_score(labels, preds)
 
@@ -212,38 +247,21 @@ def parse_sagemaker_args() -> tuple[
 ]:
     """Parse arguments from SageMaker hyperparameters.json and command line."""
     parser = HfArgumentParser(
-        [ModelArguments, CustomTrainingArguments, SageMakerEnvironmentArguments]  # type: ignore[arg-type] HfArgumentParser uses NewType nominal typing which doesn't like our concrete dataclass types
+        [ModelArguments, CustomTrainingArguments, SageMakerEnvironmentArguments]  # ty: ignore[invalid-argument-type] HfArgumentParser uses NewType nominal typing which doesn't like our concrete dataclass types
     )
 
     # First, try to find hyperparameters.json
-    hyperparameters_path = "/opt/ml/input/config/hyperparameters.json"
-    if os.path.exists(hyperparameters_path):
-        with open(hyperparameters_path) as f:
+    if os.path.exists(HYPERPARAMETERS_PATH):
+        with open(HYPERPARAMETERS_PATH) as f:
             hyperparameters = json.load(f)
 
-        # Clean the hyperparameters - SageMaker adds quotes to all values
-        cleaned_hp = {}
-        for k, v in hyperparameters.items():
-            val = v
-            # Remove any surrounding quotes
-            if isinstance(val, str):
-                val = val.strip("\"'")
-                # Convert to appropriate type if needed
-                if val.lower() == "true":
-                    val = True
-                elif val.lower() == "false":
-                    val = False
-                elif val.replace(".", "", 1).isdigit():
-                    val = float(val) if "." in v else int(val)
-            cleaned_hp[k] = val
-
         model_args, training_args, sagemaker_args = parser.parse_dict(
-            cleaned_hp, allow_extra_keys=True
+            clean_hyperparameters(hyperparameters), allow_extra_keys=True
         )
     else:
         model_args, training_args, sagemaker_args = parser.parse_args_into_dataclasses()
 
-    return model_args, training_args, sagemaker_args  # type: ignore[return-value] returns concrete dataclass types
+    return model_args, training_args, sagemaker_args  # ty: ignore[invalid-return-type] returns concrete dataclass types
 
 
 def print_classification_report(
@@ -353,7 +371,7 @@ def main() -> None:
 
     # If we're mapping the labels inline, we might as use the same pattern for other map calls.
     def tokenize(data: dict) -> dict:
-        return tokenizer(data["text"], truncation=True, padding=True)
+        return tokenizer(data["text"], truncation=True, padding=True)  # ty: ignore[call-non-callable] transformers 5 types from_pretrained as optional, but it raises rather than returning None
 
     train_dataset = train_dataset.map(map_labels)
     test_dataset = test_dataset.map(map_labels)
@@ -388,8 +406,8 @@ def main() -> None:
     ).to(torch.device(device))
 
     # Use memory-efficient tokenization
-    tokenized_train_dataset = tokenize_in_batches(train_dataset, tokenizer)
-    tokenized_test_dataset = tokenize_in_batches(test_dataset, tokenizer)
+    tokenized_train_dataset = tokenize_in_batches(train_dataset, tokenizer)  # ty: ignore[invalid-argument-type] transformers 5 types from_pretrained as optional
+    tokenized_test_dataset = tokenize_in_batches(test_dataset, tokenizer)  # ty: ignore[invalid-argument-type] transformers 5 types from_pretrained as optional
 
     training_args.logging_dir = os.path.join(sagemaker_args.output_data_dir, "logs")
     training_args.use_cpu = sagemaker_args.n_gpus == 0
@@ -419,7 +437,7 @@ def main() -> None:
         trainer.train()
 
     trainer.save_model(sagemaker_args.model_dir)
-    tokenizer.save_pretrained(sagemaker_args.model_dir)
+    tokenizer.save_pretrained(sagemaker_args.model_dir)  # ty: ignore[unresolved-attribute] transformers 5 types from_pretrained as optional
 
     # Add model metadata and versioning
     now = datetime.datetime.now(tz=datetime.UTC)
@@ -476,7 +494,7 @@ def main() -> None:
     for key, value in sorted(eval_result.items()):
         print(f"{key} = {value}")
 
-    predictions = trainer.predict(tokenized_test_dataset).predictions.argmax(axis=-1)  # type: ignore[arg-type, union-attr] Trainer expects torch Dataset but accepts datasets.Dataset, predictions is always ndarray with argmax method
+    predictions = trainer.predict(tokenized_test_dataset).predictions.argmax(axis=-1)  # ty: ignore[invalid-argument-type, unresolved-attribute] Trainer expects torch Dataset but accepts datasets.Dataset, predictions is always ndarray with argmax method
     true_labels = tokenized_test_dataset["label"]
 
     print_classification_report(true_labels, predictions, id2label)

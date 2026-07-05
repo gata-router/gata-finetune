@@ -1,0 +1,158 @@
+name: Finetune Release
+
+on:
+  push:
+    tags:
+      - '202*'
+  schedule:
+    - cron: '47 14 * * 6'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  GHCR_IMAGE: "ghcr.io/${{ github.repository }}"
+
+jobs:
+  docker:
+
+    name: "Build and Push Docker Image"
+
+    permissions:
+      attestations: write # Attest release artifacts
+      contents: read
+      id-token: write # OIDC
+      packages: write # Push image to GHCR
+
+    runs-on: ubuntu-24.04
+
+    env:
+      # The AWS steps only run when the repository has the AWS secrets
+      # configured. Forks get GHCR publishing with zero configuration.
+      AWS_ENABLED: ${{ secrets.AWS_ROLE_ARN != '' }}
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Free Up Space
+        id: free-up-space
+        run: |
+          df -h
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf $AGENT_TOOLSDIRECTORY
+
+          # https://raw.githubusercontent.com/kou/arrow/e49d8ae15583ceff03237571569099a6ad62be32/ci/scripts/util_free_space.sh
+          sudo rm -rf \
+            /opt/az \
+            /opt/microsoft/powershell \
+            /usr/local/aws-sam-cil \
+            /usr/local/bin/aliyun \
+            /usr/local/bin/azcopy \
+            /usr/local/bin/bicep \
+            /usr/local/bin/cmake-gui \
+            /usr/local/bin/cpack \
+            /usr/local/bin/helm \
+            /usr/local/bin/hub \
+            /usr/local/bin/kubectl \
+            /usr/local/bin/minikube \
+            /usr/local/bin/node \
+            /usr/local/bin/packer \
+            /usr/local/bin/pulumi* \
+            /usr/local/bin/sam \
+            /usr/local/bin/stack \
+            /usr/local/bin/terraform \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/heroku \
+            /usr/local/lib/node_modules \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell || :
+          sudo apt purge -y \
+            firefox
+
+          # Package cleanup
+          sudo apt autoremove --purge -y
+          sudo apt-get clean
+
+          df -h
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ secrets.AWS_ECR_IMAGE }}
+          flavor: |
+            latest=false
+            prefix=
+            suffix=
+          tags: |
+            type=schedule,pattern={{date 'YYYYMMDDhh'}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=false # This breaks ECR
+
+      - name: Log in to GHCR
+        id: ghcr-login
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log into AWS
+        id: aws-login
+        if: env.AWS_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: GitHubActions
+
+      - name: Log in to AWS ECR
+        id: ecr-login
+        if: env.AWS_ENABLED == 'true'
+        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419 # v2.1.5
+
+      - name: Build and push Docker image
+        id: push-ghcr
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          # SageMaker only runs x86_64 images.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ steps.push-ghcr.outputs.digest }}
+          push-to-registry: true
+
+      - name: Docker Cleanup
+        id: docker-cleanup
+        run: |
+          docker system prune -f
+          df -h
+
+      - name: Update SSM Parameter
+        id: ssm
+        if: env.AWS_ENABLED == 'true'
+        run: |
+          aws ssm put-parameter --name "${VARS_AWS_SSM_PARAMETER}" --value :$(echo "${STEPS_META_OUTPUTS_TAGS}" | cut -d: -f2 | sort -u | tail -n1) --type String --overwrite
+        env:
+          VARS_AWS_SSM_PARAMETER: ${{ vars.AWS_SSM_PARAMETER }}
+          STEPS_META_OUTPUTS_TAGS: ${{ steps.meta.outputs.tags }}

@@ -137,7 +137,7 @@ def verify_reload(work: Path) -> None:
     )
     model.eval()
 
-    encoded = tokenizer(
+    encoded = tokenizer(  # ty: ignore[call-non-callable] transformers 5 types from_pretrained as optional, but it raises rather than returning None
         "password reset request for user account",
         return_tensors="pt",
         truncation=True,
