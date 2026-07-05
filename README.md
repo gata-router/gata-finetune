@@ -65,20 +65,21 @@ The [Gata Terraform module](https://github.com/gata-router/terraform-aws-gata) s
 - IAM role for GitHub Actions to assume via OIDC
 - SSM Parameter to track release versions
 
-### GitHub Actions Workflow
+### Releases
 
-To automate building and pushing images to ECR:
+Pushing a tag in `YYYYMMDDHH` format publishes the image to GHCR. A weekly scheduled build picks up base image updates. Provenance attestations are pushed alongside every image.
 
-1. Copy the workflow template:
-   ```sh
-   cp .github/workflows/release.yaml.txt .github/workflows/release.yaml
-   ```
+```sh
+git tag 2026010203
+git push origin 2026010203
+```
 
-2. Configure the following repository variables and secrets in your GitHub repository settings:
-   - Variables: AWS region, ECR repository name, etc.
-   - Secrets: Any sensitive configuration values
+The workflow can also push to your ECR repository and update the SSM parameter Gata reads the image tag from. That half only runs when the AWS configuration exists in the repository settings:
 
-The workflow will automatically build and push images to your ECR repository when you tag a release using the YYYYMMDDHH format.
+- Secrets: `AWS_ROLE_ARN` (from the `github_actions_role_arns` output of the Terraform module) and `AWS_ECR_IMAGE` (the ECR image URL)
+- Variables: `AWS_REGION` and `AWS_SSM_PARAMETER` (the image version parameter path)
+
+Forks without these settings still publish to their own GHCR namespace.
 
 ## Running Locally for Testing
 
