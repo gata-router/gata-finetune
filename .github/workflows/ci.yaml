@@ -101,6 +101,18 @@ jobs:
         id: lint
         run: ruff check
 
+      - name: Type Checking
+        id: types
+        run: ty check
+
+      - name: Run Tests
+        id: run-tests
+        run: coverage run -m pytest
+
+      - name: Coverage Report
+        id: coverage
+        run: coverage report --show-missing
+
   docker:
     name: "Test Docker Build"
 

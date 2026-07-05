@@ -4,6 +4,7 @@ authors = [
     {name = "Dave Hall", email = "skwashd@gmail.com"},
 ]
 description = "Train HF BERT model using Zendesk ticket data"
+license = {text = "MIT"}
 
 dependencies = [
   "datasets==5.0.0",
@@ -21,9 +22,35 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
+  "coverage==7.15.0",
+  "pytest==9.1.1",
   "ruff==0.15.20",
   "ty==0.0.54",
 ]
+
+[build-system]
+requires = [
+    "hatchling==1.30.1",
+    "hatch-vcs==0.5.0",
+]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["train.py"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+search_parent_directories = true
+
+[tool.pytest.ini_options]
+# Keep pytest away from test.py at the repo root. It is an end to end smoke
+# test that trains a real model. Run it with `uv run ./test.py`.
+testpaths = ["tests"]
+
+[tool.coverage.run]
+include = ["train.py"]
 
 [tool.ruff.lint]
 # Rules listed at https://github.com/charliermarsh/ruff#supported-rules
@@ -36,3 +63,4 @@ unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
 "test.py" = ["S101", "S108", "S603"]
+"tests/*" = ["S101", "S108"]
